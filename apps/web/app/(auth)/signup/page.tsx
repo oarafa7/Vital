@@ -17,7 +17,6 @@ export default function SignupPage() {
   const toast = useToast();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
-  const [confirmationRequired, setConfirmationRequired] = useState(false);
 
   const {
     register,
@@ -39,18 +38,16 @@ export default function SignupPage() {
   const onSubmit = async (data: SignupInput) => {
     setSubmitting(true);
     try {
-      const { needsEmailConfirmation } = await signup(data);
-      if (needsEmailConfirmation) {
-        // The account exists but Supabase withheld the session pending email
-        // confirmation. Say so plainly rather than failing silently.
-        setConfirmationRequired(true);
-        return;
-      }
+      // Resolves only with a complete session, so reaching the next line means
+      // the user really is signed in. Anything else throws.
+      await signup(data);
       router.replace('/onboarding/health-profile');
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.kind === 'conflict') {
-          toast.error('An account with this email already exists. Try signing in instead.');
+          // The API distinguishes a duplicate email from a duplicate phone;
+          // use its message rather than assuming which field collided.
+          toast.error(err.message);
         } else if (err.kind === 'network') {
           toast.error('Could not reach the VITAL server. Is the API running?');
         } else {
@@ -64,21 +61,6 @@ export default function SignupPage() {
       setSubmitting(false);
     }
   };
-
-  if (confirmationRequired) {
-    return (
-      <Card className="p-7 text-center sm:p-8">
-        <h1 className="font-display text-2xl text-ink">Confirm your email</h1>
-        <p className="mt-2 text-sm leading-relaxed text-inkSoft">
-          Your VITAL account was created. Check your inbox for a confirmation link — once
-          you&apos;ve confirmed, you can sign in.
-        </p>
-        <Link href="/login" className="mt-6 block">
-          <Button className="w-full">Go to sign in</Button>
-        </Link>
-      </Card>
-    );
-  }
 
   return (
     <Card className="p-7 sm:p-8">

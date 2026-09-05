@@ -8,6 +8,10 @@ export default defineConfig({
   dbCredentials: {
     url: process.env.DATABASE_URL ?? '',
   },
+  // Only `public` is ours. Without this, drizzle-kit can decide it should
+  // manage Supabase's `auth` schema — which `public.users.id` references —
+  // and emit CREATE/DROP statements against gotrue's own tables.
+  schemaFilter: ['public'],
   verbose: true,
   strict: true,
 });

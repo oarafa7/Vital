@@ -48,10 +48,9 @@ interface AuthState {
   hasActiveSubscription: boolean;
   login: (email: string, password: string) => Promise<void>;
   /**
-   * Creates the account. Returns `needsEmailConfirmation: true` when the API
-   * created the user but Supabase withheld a session pending email
-   * confirmation — the caller should send the user to sign in rather than
-   * pretending they're logged in.
+   * Creates the account and signs in. Resolves only once a complete session is
+   * held; any other outcome rejects with an `ApiError` for the caller to show.
+   * There is no "created but signed out" state — the API cannot return one.
    */
   signup: (input: {
     full_name: string;
@@ -59,7 +58,7 @@ interface AuthState {
     password: string;
     phone: string;
     accepted_terms: true;
-  }) => Promise<{ needsEmailConfirmation: boolean }>;
+  }) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   refreshSubscription: () => Promise<void>;
@@ -74,15 +73,21 @@ function isActive(sub: SubscriptionWithPlan | null): boolean {
 }
 
 /**
- * Supabase returns the result of an email confirmation as a URL *fragment* on
- * its configured Site URL (http://localhost:3003), e.g.
+ * Supabase delivers the result of a password-reset (or any email link) as a URL
+ * *fragment* on the project's configured Site URL, e.g.
  *
- *   http://localhost:3003/#access_token=…&refresh_token=…&type=signup
- *   http://localhost:3003/#error=access_denied&error_description=Email+link+…
+ *   <site-url>/#access_token=…&refresh_token=…&type=recovery
+ *   <site-url>/#error=access_denied&error_description=Email+link+…
  *
  * The fragment never reaches the server, so it has to be read here on mount.
- * Without this the tokens are silently discarded and a user who just confirmed
- * their email is bounced to /login as if nothing happened.
+ * Without this the tokens are silently discarded and a user who just followed a
+ * reset link is bounced to /login as if nothing happened.
+ *
+ * Signup no longer relies on this path — accounts are created confirmed and get
+ * a session directly. It still matters for password reset, which means the
+ * project's Site URL must be the deployed web origin; if it is still a
+ * localhost value, reset links are useless in production. See
+ * AUTH_ARCHITECTURE.md → "Supabase URL configuration".
  */
 function readAuthFragment(): { accessToken?: string; refreshToken?: string; error?: string } | null {
   if (typeof window === 'undefined') return null;
@@ -194,18 +199,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (input) => {
       const res = await authApi.signup(input);
 
-      // The API returns 201 with a null token when the Supabase project has
-      // email confirmation enabled. Treat that as a real outcome instead of
-      // silently landing the user in a signed-out app.
-      if (!res.access_token) {
-        return { needsEmailConfirmation: true };
+      // Defence in depth. The API guarantees a 201 carries both tokens, so
+      // this cannot fire — but onboarding without a session means every
+      // request 401s, which is exactly the loop this system used to produce.
+      if (!res.access_token || !res.refresh_token) {
+        throw new ApiError(
+          'incomplete_session',
+          'Your account was created, but we could not sign you in. Please sign in.',
+          500,
+          'server',
+        );
       }
 
       setSession(res.access_token, res.refresh_token);
       setUserState(res.user);
       setStatus('authenticated');
       void loadSubscription();
-      return { needsEmailConfirmation: false };
     },
     [loadSubscription],
   );

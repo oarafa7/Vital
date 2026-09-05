@@ -13,7 +13,15 @@ import type {
   User,
 } from '@vital/shared';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000/api/v1';
+/**
+ * `NEXT_PUBLIC_*` is inlined at build time, so a missing value cannot be fixed
+ * without a redeploy. Falling back to localhost in a production bundle makes
+ * every request fail as an unexplained network error, so the fallback is
+ * development-only and production fails explicitly instead (see `request`).
+ */
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3000/api/v1');
 const TOKEN_KEY = 'vital_partner_token';
 
 export function getToken(): string | null {
@@ -46,6 +54,13 @@ interface Opts {
 
 async function request<T>(path: string, opts: Opts = {}): Promise<T> {
   const { method = 'GET', body, auth = true, form } = opts;
+  if (!BASE_URL) {
+    throw new ApiError(
+      'configuration_error',
+      'This app is not configured correctly: NEXT_PUBLIC_API_URL is missing.',
+      0,
+    );
+  }
   const headers: Record<string, string> = {};
   if (!form) headers['Content-Type'] = 'application/json';
   if (auth) {

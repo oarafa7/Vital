@@ -33,6 +33,7 @@ import type {
   UserBiomarkerResult,
 } from '@vital/shared';
 
+import { coerceRole } from './provisioning.js';
 import type {
   AddonOrderItemRow,
   AddonOrderRow,
@@ -69,7 +70,9 @@ export function serializeUser(row: UserRow): User {
     id: row.id,
     email: row.email,
     full_name: row.fullName,
-    role: (row.role as User['role']) ?? 'user',
+    // Narrowed rather than cast: an unrecognised stored role must degrade to
+    // the least-privileged value, not flow through to clients as-is.
+    role: coerceRole(row.role),
     phone: row.phone,
     date_of_birth: row.dateOfBirth,
     gender: (row.gender as User['gender']) ?? null,

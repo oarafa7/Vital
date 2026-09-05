@@ -34,7 +34,9 @@ Create `apps/api/.env` (see `apps/api/.env.example`):
 ```
 NODE_ENV=development
 PORT=3000
-DATABASE_URL=postgresql://postgres:[pwd]@db.[project].supabase.co:5432/postgres
+# Use the TRANSACTION POOLER (port 6543), not the direct 5432 host: the client
+# sets prepare:false for it, and direct-connection hostnames are IPv6-only.
+DATABASE_URL=postgresql://postgres.[project]:[pwd]@[region].pooler.supabase.com:6543/postgres?sslmode=require
 SUPABASE_URL=https://[project].supabase.co
 SUPABASE_SERVICE_KEY=...
 SUPABASE_JWT_SECRET=...

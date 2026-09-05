@@ -41,7 +41,19 @@ import type {
   VitalScore,
 } from '@vital/shared';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000/api/v1';
+/**
+ * Base URL of the VITAL API.
+ *
+ * `NEXT_PUBLIC_*` values are inlined into the bundle at build time, so a
+ * missing one cannot be corrected without a redeploy. Silently falling back to
+ * localhost in a production build is the worst outcome: every request fails
+ * with "could not reach the server" and nothing says why. The fallback is
+ * therefore development-only, and a production build with no API URL fails
+ * loudly and specifically on the first request instead.
+ */
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3000/api/v1');
 
 const ACCESS_KEY = 'vital.web.access_token';
 const REFRESH_KEY = 'vital.web.refresh_token';
@@ -133,6 +145,17 @@ interface RequestOptions {
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, auth = true, query } = opts;
 
+  if (!BASE_URL) {
+    // Production build with NEXT_PUBLIC_API_URL unset. Say so precisely rather
+    // than letting an invalid URL surface as a generic network failure.
+    throw new ApiError(
+      'configuration_error',
+      'This app is not configured correctly: the API address is missing. Please contact support.',
+      0,
+      'server',
+    );
+  }
+
   const url = new URL(`${BASE_URL}${path}`);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
@@ -210,17 +233,19 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 export const authApi = {
+  // The API never returns a success response without a usable session, so both
+  // tokens are non-null on a 201. `lib/auth.tsx` still verifies that at runtime.
   signup: (input: SignupInput) =>
-    request<{ user: User; access_token: string | null; refresh_token: string | null }>(
-      '/auth/signup',
-      { method: 'POST', body: input, auth: false },
-    ),
-  login: (input: LoginInput) =>
-    request<{ access_token: string; refresh_token: string; user_id: string }>('/auth/login', {
+    request<{ user: User; access_token: string; refresh_token: string }>('/auth/signup', {
       method: 'POST',
       body: input,
       auth: false,
     }),
+  login: (input: LoginInput) =>
+    request<{ user: User; access_token: string; refresh_token: string; user_id: string }>(
+      '/auth/login',
+      { method: 'POST', body: input, auth: false },
+    ),
   logout: () => request<{ success: boolean }>('/auth/logout', { method: 'POST' }),
   resetPassword: (email: string) =>
     request<{ success: boolean }>('/auth/reset-password', {

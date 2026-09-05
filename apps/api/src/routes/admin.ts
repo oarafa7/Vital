@@ -68,6 +68,8 @@ import { getNotificationConfig, setNotificationConfig } from '../lib/notificatio
 import { confirmUpload, parseAndStoreUpload } from '../lib/lab-upload.js';
 import { generateUserNotifications } from '../lib/notifications.js';
 import { computeUserRecommendations } from '../lib/recommendations.js';
+import { provisionDeps } from '../lib/provisioning-ports.js';
+import { coerceRole, provisionManagedAccount } from '../lib/provisioning.js';
 import { errorResponse } from '../lib/http.js';
 import { computeUserScore, recordScoreSnapshot } from '../lib/score.js';
 import { supabaseAdmin } from '../lib/supabase.js';
@@ -212,7 +214,7 @@ adminRoutes.get('/users', async (c) => {
       id: u.id,
       email: u.email,
       full_name: u.fullName,
-      role: (u.role as AdminUserSummary['role']) ?? 'user',
+      role: coerceRole(u.role),
       phone: u.phone,
       subscription_status: (sub?.status as AdminUserSummary['subscription_status']) ?? null,
       plan_name: (sub?.planName as AdminUserSummary['plan_name']) ?? null,
@@ -1165,25 +1167,34 @@ adminRoutes.get('/partners', async (c) => {
 adminRoutes.post('/partners', validate('json', createPartnerSchema), async (c) => {
   const { email, full_name, password, phone } = c.req.valid('json');
 
-  const { data, error } = await supabaseAdmin.auth.admin.createUser({
+  // Same atomicity as self-signup: if the profile cannot be written the Auth
+  // identity is rolled back, so an admin's failed partner creation can never
+  // leave an orphan holding the address. No session is minted for the partner.
+  const result = await provisionManagedAccount(provisionDeps, {
     email,
     password,
+    fullName: full_name,
     phone,
-    email_confirm: true,
-    user_metadata: { full_name },
+    role: 'lab_partner',
   });
-  if (error || !data.user) {
-    if (error?.message?.toLowerCase().includes('already')) {
-      return errorResponse(c, 'conflict', 'An account with this email already exists');
-    }
-    return errorResponse(c, 'unprocessable', error?.message ?? 'Could not create account');
-  }
 
-  const [row] = await db
-    .insert(users)
-    .values({ id: data.user.id, email, fullName: full_name, phone, role: 'lab_partner' })
-    .returning();
-  if (!row) return errorResponse(c, 'server_error', 'Failed to persist partner profile');
+  if (!result.ok) {
+    switch (result.kind) {
+      case 'email_taken':
+        return errorResponse(c, 'conflict', 'An account with this email already exists');
+      case 'phone_taken':
+        return errorResponse(c, 'conflict', 'This phone number is already registered to another account');
+      case 'profile_conflict':
+        return errorResponse(
+          c,
+          'conflict',
+          'This email is linked to an account that could not be set up. Run db:check-users.',
+        );
+      default:
+        return errorResponse(c, 'unprocessable', 'Could not create the partner account');
+    }
+  }
+  const row = result.row;
 
   return c.json(
     {

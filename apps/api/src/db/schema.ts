@@ -23,13 +23,26 @@ import {
 // users
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * ⚠️ Constraints on this table that live ONLY in SQL (migration 0015), because
+ * Drizzle's schema DSL cannot express them against the `auth` schema:
+ *
+ *   users_id_auth_users_id_fk  id → auth.users(id) ON DELETE CASCADE
+ *   users_role_check           role IN ('user','admin','lab_partner')
+ *
+ * They are real and enforced. `drizzle.config.ts` pins `schemaFilter: ['public']`
+ * so drizzle-kit never tries to manage the `auth` schema, but a future
+ * `db:generate` still cannot see these two constraints — **review generated SQL
+ * before applying it** and do not let it drop them.
+ */
 export const users = pgTable('users', {
-  // Mirrors the Supabase auth.users id (UUID) so the two stay in lockstep.
+  // Mirrors the Supabase auth.users id (UUID); enforced by the FK above.
   id: uuid('id').primaryKey(),
   email: text('email').notNull().unique(),
   fullName: text('full_name').notNull(),
   phone: text('phone'),
-  // 'user' | 'admin' — gates the admin dashboard via requireAdmin.
+  // 'user' | 'admin' | 'lab_partner' — the sole authorization source, checked
+  // by requireAdmin / requireLabPartner. Never read from JWT or metadata.
   role: text('role').notNull().default('user'),
   dateOfBirth: date('date_of_birth'),
   gender: text('gender'),

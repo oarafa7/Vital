@@ -43,15 +43,20 @@ export default function SignUp() {
     setSubmitting(true);
     try {
       const res = await authApi.signup(data);
-      if (res.access_token) {
-        await applySession(res.access_token, res.refresh_token ?? undefined, res.user);
+      if (!res.access_token || !res.refresh_token) {
+        // The API cannot return a 201 without a complete session; guard anyway
+        // rather than walking into onboarding signed out, where every request
+        // 401s and the user ends up bounced back to login.
+        toast.error('Your account was created, but we could not sign you in. Please sign in.');
+        router.replace('/(auth)/login');
+        return;
       }
+      await applySession(res.access_token, res.refresh_token, res.user);
       router.replace('/(auth)/health-profile');
     } catch (err) {
-      // [VITAL DEBUG] — temporary. Surfaces the true error behind the toast.
-      console.log('[VITAL DEBUG] signup caught:', err instanceof ApiError ? 'ApiError' : 'non-ApiError');
-      console.log('[VITAL DEBUG] name/message:', (err as Error)?.name, (err as Error)?.message);
-      console.log('[VITAL DEBUG] stack:', (err as Error)?.stack);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[VITAL] signup failed', err);
+      }
       const message = err instanceof ApiError ? err.message : 'Could not create account';
       toast.error(message);
     } finally {

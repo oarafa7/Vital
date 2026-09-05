@@ -36,8 +36,16 @@ import type {
 
 import { getAccessToken } from './auth';
 
+/**
+ * `EXPO_PUBLIC_*` is inlined into the bundle at build time, so a missing value
+ * cannot be corrected without a rebuild. Falling back to localhost in a release
+ * build makes every request fail as an unexplained network error, so the
+ * fallback is development-only and a release build without it fails explicitly
+ * instead (see `request`).
+ */
 const BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000/api/v1';
+  process.env.EXPO_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3000/api/v1');
 
 export class ApiError extends Error {
   constructor(
@@ -61,6 +69,14 @@ interface RequestOptions {
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, auth = true, query } = opts;
 
+  if (!BASE_URL) {
+    throw new ApiError(
+      'configuration_error',
+      'This app is not configured correctly: EXPO_PUBLIC_API_URL is missing.',
+      0,
+    );
+  }
+
   const url = new URL(`${BASE_URL}${path}`);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
@@ -74,10 +90,12 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     if (token) headers.Authorization = `Bearer ${token}`;
   }
 
-  // [VITAL DEBUG] — temporary instrumentation. Remove before shipping.
-  console.log('[VITAL DEBUG] request →', method, url.toString());
-  console.log('[VITAL DEBUG] BASE_URL =', BASE_URL);
-  console.log('[VITAL DEBUG] body =', body !== undefined ? JSON.stringify(body) : '(none)');
+  // Method and path only, development only. Request and response bodies are
+  // NEVER logged: they carry the password on /auth/signup and /auth/login, and
+  // the access and refresh tokens in those responses.
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[VITAL] →', method, path);
+  }
 
   let res: Response;
   try {
@@ -90,15 +108,16 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     // fetch() rejects on transport failure (unreachable host, DNS, cleartext
     // blocked). This is NOT an ApiError, which is why the UI shows its generic
     // fallback message.
-    console.log('[VITAL DEBUG] fetch THREW (network error):', String(networkErr));
-    console.log('[VITAL DEBUG] error name:', (networkErr as Error)?.name);
-    console.log('[VITAL DEBUG] error stack:', (networkErr as Error)?.stack);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('[VITAL] network failure', method, path, networkErr);
+    }
     throw networkErr;
   }
 
   const text = await res.text();
-  console.log('[VITAL DEBUG] response status =', res.status);
-  console.log('[VITAL DEBUG] response body =', text || '(empty)');
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[VITAL] ←', res.status, method, path);
+  }
   const data = text ? JSON.parse(text) : null;
 
   if (!res.ok) {
@@ -116,17 +135,19 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 export const authApi = {
+  // The API never returns a success response without a usable session, so both
+  // tokens are non-null on a 201. The signup screen still verifies at runtime.
   signup: (input: SignupInput) =>
-    request<{ user: User; access_token: string | null; refresh_token: string | null }>(
-      '/auth/signup',
-      { method: 'POST', body: input, auth: false },
-    ),
-  login: (input: LoginInput) =>
-    request<{ access_token: string; refresh_token: string; user_id: string }>('/auth/login', {
+    request<{ user: User; access_token: string; refresh_token: string }>('/auth/signup', {
       method: 'POST',
       body: input,
       auth: false,
     }),
+  login: (input: LoginInput) =>
+    request<{ user: User; access_token: string; refresh_token: string; user_id: string }>(
+      '/auth/login',
+      { method: 'POST', body: input, auth: false },
+    ),
   logout: () => request<{ success: boolean }>('/auth/logout', { method: 'POST' }),
   resetPassword: (email: string) =>
     request<{ success: boolean }>('/auth/reset-password', {
