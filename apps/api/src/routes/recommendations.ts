@@ -10,7 +10,9 @@ import { requireActiveSubscription } from '../middleware/subscription.js';
 
 export const recommendationRoutes = new Hono<{ Variables: AuthVariables }>();
 
-recommendationRoutes.use('*', requireAuth, requireActiveSubscription);
+// Scoped to this router's own paths — see the note in ai.ts and
+// apps/api/test/route-mounting.test.ts.
+recommendationRoutes.use('/recommendations/*', requireAuth, requireActiveSubscription);
 
 recommendationRoutes.get('/recommendations/me', async (c) => {
   const userId = c.get('userId');

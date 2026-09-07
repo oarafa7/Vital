@@ -23,7 +23,12 @@ import { validate } from '../middleware/validate.js';
 
 export const aiRoutes = new Hono<{ Variables: AuthVariables }>();
 
-aiRoutes.use('*', requireAuth, requireActiveSubscription);
+// Scoped to this router's own paths, not '*'. These routes are mounted at the
+// /api/v1 root, so a '*' matcher registers middleware for the whole API and
+// intercepts requests destined for routers mounted after it — which is how
+// /lab-partner/* and the public content routes ended up behind a patient
+// subscription check. See apps/api/test/route-mounting.test.ts.
+aiRoutes.use('/ai/*', requireAuth, requireActiveSubscription);
 
 aiRoutes.get('/ai/insights/me', async (c) => {
   const userId = c.get('userId');

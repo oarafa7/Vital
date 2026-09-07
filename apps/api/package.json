@@ -9,7 +9,7 @@
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test src/lib/provisioning.test.ts",
+    "test": "node --import tsx --test src/lib/provisioning.test.ts test/route-mounting.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seeds/index.ts",

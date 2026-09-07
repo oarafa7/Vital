@@ -25,7 +25,14 @@ import { validate } from '../middleware/validate.js';
 
 export const bookingRoutes = new Hono<{ Variables: AuthVariables }>();
 
-bookingRoutes.use('*', requireAuth, requireActiveSubscription);
+// Scoped to this router's own paths — see the note in ai.ts and
+// apps/api/test/route-mounting.test.ts. Both the exact collection paths and the
+// nested wildcards are listed so every route below stays gated.
+bookingRoutes.use('/areas', requireAuth, requireActiveSubscription);
+bookingRoutes.use('/areas/*', requireAuth, requireActiveSubscription);
+bookingRoutes.use('/bookings', requireAuth, requireActiveSubscription);
+bookingRoutes.use('/bookings/*', requireAuth, requireActiveSubscription);
+bookingRoutes.use('/addons', requireAuth, requireActiveSubscription);
 
 /** Fan a visit alert out to every partner (doctor) assigned to a booking's area. */
 async function notifyAreaPartners(

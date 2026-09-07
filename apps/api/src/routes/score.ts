@@ -17,7 +17,9 @@ import { requireActiveSubscription } from '../middleware/subscription.js';
 
 export const scoreRoutes = new Hono<{ Variables: AuthVariables }>();
 
-scoreRoutes.use('*', requireAuth, requireActiveSubscription);
+// Scoped to this router's own paths — see the note in ai.ts and
+// apps/api/test/route-mounting.test.ts.
+scoreRoutes.use('/score/*', requireAuth, requireActiveSubscription);
 
 scoreRoutes.get('/score/me', async (c) => {
   const userId = c.get('userId');

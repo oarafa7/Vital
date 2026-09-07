@@ -23,7 +23,12 @@ import { validate } from '../middleware/validate.js';
 
 export const biomarkerRoutes = new Hono<{ Variables: AuthVariables }>();
 
-biomarkerRoutes.use('*', requireAuth, requireActiveSubscription);
+// Scoped to this router's own paths — see the note in ai.ts and
+// apps/api/test/route-mounting.test.ts. Both the exact collection paths and the
+// nested wildcard are listed so every route below stays gated.
+biomarkerRoutes.use('/biomarkers/*', requireAuth, requireActiveSubscription);
+biomarkerRoutes.use('/biomarkers', requireAuth, requireActiveSubscription);
+biomarkerRoutes.use('/biomarker-categories', requireAuth, requireActiveSubscription);
 
 /**
  * Returns a map of biomarkerId → latest result for the given user, choosing
